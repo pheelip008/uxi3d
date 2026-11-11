@@ -154,9 +154,16 @@ function TentScene({ mode, onFreeView }: TentSceneProps) {
     invalidate();
   }, [model, texture, frame, invalidate]);
 
-  // The other sizes are small, so fetch them in the background for instant switching.
+  // Fetch the other sizes once the browser is idle, so switching size is instant
+  // without competing with the first tent for the network and the CPU.
   useEffect(() => {
-    TENT.sizes.forEach((s) => useGLTF.preload(s.modelUrl));
+    const preload = () => TENT.sizes.forEach((s) => useGLTF.preload(s.modelUrl));
+    if (typeof requestIdleCallback === 'function') {
+      const id = requestIdleCallback(preload, { timeout: 4000 });
+      return () => cancelIdleCallback(id);
+    }
+    const id = setTimeout(preload, 1500);
+    return () => clearTimeout(id);
   }, []);
 
   // Size of the model in metres (after the size's scale correction).

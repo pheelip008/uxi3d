@@ -43,6 +43,8 @@ For the 2D editing UI, I used **React Konva**. It provides the canvas interactio
 
 For the 3D preview, I used **React Three Fiber** and **Three.js**, with Drei helpers for loading the `.glb` tent models and controlling the camera. The tent model has UV mapping: each printable panel corresponds to a defined area of its texture. I render the customer’s colours and artwork to one shared HTML canvas, turn that canvas into a Three.js `CanvasTexture`, and apply it to the tent’s print material. This is why an edit in 2D appears on the correct panel of the 3D model immediately.
 
+To keep the 3D preview quick to load, I compressed the supplied tent models with glTF-Transform (Meshopt geometry and WebP textures). Each file went from about 10 MB to about 0.55 MB with the same triangles and UV mapping, and the browser starts downloading the model at the same time as the 3D code.
+
 ### Production PDF
 
 I used **jsPDF** to generate an A4 production summary in the browser. When the PDF is requested, the app captures fixed-size JPEG views from the Three.js canvas and the shared 2D print canvas, then combines them with the selected product, quote, panel colours, Pantone notes, artwork dimensions, and DPI information. The PDF is created as a `Blob`, ready to download or pass with the configuration to the Shopify order flow. I load jsPDF only when the customer asks for the PDF, so it does not add unnecessary weight to the main experience.
@@ -73,4 +75,3 @@ VITE_PRICING_API_URL=https://pricing.example.com
 - Upload artwork to cloud storage instead of storing it in browser data.
 - Verify quotes on the server before checkout.
 - Create vector, print-ready exports for each panel.
-- Compress the 3D models further for faster loading on mobile networks.

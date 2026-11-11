@@ -1,3 +1,10 @@
+// Compressed copies of the supplied models: about 0.55 MB each instead of 10 MB, with the
+// same triangles and UVs (Meshopt geometry, 1024 px WebP textures). Made with:
+//   npx @gltf-transform/cli optimize in.glb out.glb --simplify false --texture-compress webp --texture-size 1024
+// Importing them gives each file a hashed name, so browsers can cache it for good.
+import model5x5 from '../assets/models/tent-5x5.glb?url';
+import model6x6 from '../assets/models/tent-6.5x6.5.glb?url';
+import model8x8 from '../assets/models/tent-8x8.glb?url';
 import type { Point, ProductDefinition, SectionDefinition, SizeDefinition } from '../types.ts';
 
 // Panel outlines measured from each model's UV map (UV units, y down).
@@ -55,8 +62,6 @@ function buildSections(outlines: Outlines): SectionDefinition[] {
   return SECTION_META.map((meta) => ({ ...meta, polygon: outlines[meta.id] }));
 }
 
-const MODELS = `${import.meta.env.BASE_URL}models/`;
-
 export const TENT: ProductDefinition = {
   id: 'custom-canopy-tent',
   title: 'Custom Canopy Tent',
@@ -70,7 +75,7 @@ export const TENT: ProductDefinition = {
     {
       id: '5x5',
       label: '5 x 5 ft',
-      modelUrl: `${MODELS}tent-5x5.glb`,
+      modelUrl: model5x5,
       modelScale: [1, 1, 1],
       widthCm: 152,
       sections: buildSections(OUTLINES_5X5),
@@ -78,7 +83,7 @@ export const TENT: ProductDefinition = {
     {
       id: '6.5x6.5',
       label: '6.5 x 6.5 ft',
-      modelUrl: `${MODELS}tent-6.5x6.5.glb`,
+      modelUrl: model6x6,
       // This model was exported at 5 ft wide, so stretch it to 6.5 ft.
       modelScale: [1.3, 1, 1.3],
       widthCm: 198,
@@ -87,7 +92,7 @@ export const TENT: ProductDefinition = {
     {
       id: '8x8',
       label: '8 x 8 ft',
-      modelUrl: `${MODELS}tent-8x8.glb`,
+      modelUrl: model8x8,
       modelScale: [1, 1, 1],
       widthCm: 244,
       sections: buildSections(OUTLINES_8X8),
