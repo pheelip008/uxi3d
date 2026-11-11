@@ -748,3 +748,94 @@ button:disabled {
   border-radius: 8px;
   font-size: 11px;
 }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 1280px) {
+  .stage {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .app {
+    height: auto;
+    min-height: 100dvh;
+  }
+
+  .topbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .workspace {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .sidebar {
+    border-right: 0;
+    overflow: visible;
+  }
+
+  /* One big preview on phones, switched with the tabs. */
+  .stage {
+    order: -1;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 62vh;
+    padding-bottom: 0;
+  }
+
+  .stage .view-switch {
+    display: flex;
+  }
+
+  .pane {
+    grid-row: 2;
+    grid-column: 1;
+  }
+
+  /* Hide the inactive pane without unmounting it, so the 3D canvas keeps its size. */
+  .stage[data-mobile-view='2d'] .pane-3d,
+  .stage[data-mobile-view='3d'] .pane-2d {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .pricebar {
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px 12px;
+    box-shadow: 0 -6px 16px rgba(15, 23, 42, 0.08);
+  }
+
+  .price-actions {
+    flex: 1 1 100%;
+  }
+
+  .price-actions .btn {
+    flex: 1;
+  }
+
+  .pane-hint,
+  .preview-hint {
+    display: none;
+  }
+}
+
+/* Phones: keep the top bar to two short rows so the preview fits above the price bar. */
+@media (max-width: 600px) {
+  .brand span,
+  .save-status.idle,
+  .save-status.saved {
+    display: none;
+  }
+
+  .topbar-actions .btn.small {
+    padding-inline: 8px;
+  }
+}
