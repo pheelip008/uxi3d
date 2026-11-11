@@ -1,8 +1,20 @@
 import { useMemo, useState } from 'react';
-import { formatMoney } from '../lib/format.ts';
+import { designCanvas, renderSurfaceNow } from '../lib/designSurface.ts';
+import { downloadBlob, formatMoney } from '../lib/format.ts';
+import { previewBridge } from '../lib/previewBridge.ts';
 import { buildQuoteRequest } from '../pricing/engine.ts';
+import type { PriceQuote } from '../pricing/types.ts';
 import { usePriceQuote } from '../pricing/usePriceQuote.ts';
 import { useDesignStore } from '../store/designStore.ts';
+
+async function makeProductionPdf(quote: PriceQuote): Promise<Blob> {
+  const { config, quantity } = useDesignStore.getState();
+  renderSurfaceNow(); // make sure the texture shows the latest edit
+  const views = previewBridge.capture(['front', 'right', 'back', 'left']);
+  const layout = designCanvas.toDataURL('image/jpeg', 0.92);
+  const { createProductionPdf } = await import('../pdf/productionPdf.ts');
+  return createProductionPdf({ config, quote, quantity, views, layout });
+}
 
 export function PriceBar() {
   const config = useDesignStore((s) => s.config);
@@ -11,8 +23,24 @@ export function PriceBar() {
   const request = useMemo(() => buildQuoteRequest(config, quantity), [config, quantity]);
   const { quote, loading, error } = usePriceQuote(request);
   const [showBreakdown, setShowBreakdown] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const stale = loading || !quote;
+
+  async function handleDownloadPdf() {
+    if (!quote) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      downloadBlob(await makeProductionPdf(quote), `production-${config.id}.pdf`);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Could not create the PDF.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const customisation = quote
     ? quote.lines.filter((l) => l.kind === 'customization').reduce((sum, l) => sum + l.amount, 0)
     : 0;
@@ -81,6 +109,17 @@ export function PriceBar() {
           +
         </button>
       </label>
+
+      <div className="price-actions">
+        {actionError && (
+          <span className="hint error" role="alert">
+            {actionError}
+          </span>
+        )}
+        <button type="button" className="btn" disabled={stale || busy} onClick={handleDownloadPdf}>
+          {busy ? 'Preparing PDF…' : 'Production PDF'}
+        </button>
+      </div>
     </footer>
   );
 }
