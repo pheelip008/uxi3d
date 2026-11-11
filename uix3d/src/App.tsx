@@ -1,7 +1,12 @@
+import { Editor2D } from './components/Editor2D.tsx';
 import { Sidebar } from './components/Sidebar.tsx';
 import { TopBar } from './components/TopBar.tsx';
+import { useDesignSurface } from './lib/designSurface.ts';
 
 export default function App() {
+  // Redraw the shared design canvas whenever the design changes.
+  useDesignSurface();
+
   return (
     <div className="app">
       <TopBar />
@@ -9,7 +14,7 @@ export default function App() {
         <Sidebar />
         <section className="stage">
           <div className="pane pane-2d">
-            <div className="pane-loading">2D editor</div>
+            <Editor2D />
           </div>
           <div className="pane pane-3d">
             <div className="pane-loading">3D preview</div>
