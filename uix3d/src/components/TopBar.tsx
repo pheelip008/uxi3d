@@ -1,4 +1,5 @@
 import { useState, type ChangeEvent } from 'react';
+import { isEmbedded, postToParent } from '../embed/bridge.ts';
 import { useDesignStore } from '../store/designStore.ts';
 import { exportDesign, readDesignFile } from '../store/persistence.ts';
 
@@ -67,6 +68,11 @@ export function TopBar() {
         >
           Reset
         </button>
+        {isEmbedded && (
+          <button type="button" className="btn small" onClick={() => postToParent({ type: 'CONFIGURATOR_CLOSE' })}>
+            Close
+          </button>
+        )}
       </div>
     </header>
   );

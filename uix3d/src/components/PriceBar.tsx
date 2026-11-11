@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { designCanvas, renderSurfaceNow } from '../lib/designSurface.ts';
 import { downloadBlob, formatMoney } from '../lib/format.ts';
 import { previewBridge } from '../lib/previewBridge.ts';
 import { buildQuoteRequest } from '../pricing/engine.ts';
 import type { PriceQuote } from '../pricing/types.ts';
 import { usePriceQuote } from '../pricing/usePriceQuote.ts';
+import { addToCart, buildCartPayload, type AddToCartResult, type CartPayload } from '../shopify/cart.ts';
 import { useDesignStore } from '../store/designStore.ts';
 
 async function makeProductionPdf(quote: PriceQuote): Promise<Blob> {
@@ -16,6 +17,11 @@ async function makeProductionPdf(quote: PriceQuote): Promise<Blob> {
   return createProductionPdf({ config, quote, quantity, views, layout });
 }
 
+interface CartDone extends AddToCartResult {
+  payload: CartPayload;
+  pdfUrl: string;
+}
+
 export function PriceBar() {
   const config = useDesignStore((s) => s.config);
   const quantity = useDesignStore((s) => s.quantity);
@@ -23,21 +29,43 @@ export function PriceBar() {
   const request = useMemo(() => buildQuoteRequest(config, quantity), [config, quantity]);
   const { quote, loading, error } = usePriceQuote(request);
   const [showBreakdown, setShowBreakdown] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<'pdf' | 'cart' | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [done, setDone] = useState<CartDone | null>(null);
+
+  // Free the PDF link when the dialog closes.
+  useEffect(() => () => {
+    if (done) URL.revokeObjectURL(done.pdfUrl);
+  }, [done]);
 
   const stale = loading || !quote;
 
   async function handleDownloadPdf() {
     if (!quote) return;
-    setBusy(true);
+    setBusy('pdf');
     setActionError(null);
     try {
       downloadBlob(await makeProductionPdf(quote), `production-${config.id}.pdf`);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Could not create the PDF.');
     } finally {
-      setBusy(false);
+      setBusy(null);
+    }
+  }
+
+  async function handleAddToCart() {
+    if (!quote) return;
+    setBusy('cart');
+    setActionError(null);
+    try {
+      const productionPdf = await makeProductionPdf(quote);
+      const payload = buildCartPayload(config, quote, quantity);
+      const result = await addToCart({ payload, design: config, quote, productionPdf });
+      setDone({ ...result, payload, pdfUrl: URL.createObjectURL(productionPdf) });
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Could not add to cart.');
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -116,10 +144,62 @@ export function PriceBar() {
             {actionError}
           </span>
         )}
-        <button type="button" className="btn" disabled={stale || busy} onClick={handleDownloadPdf}>
-          {busy ? 'Preparing PDF…' : 'Production PDF'}
+        <button type="button" className="btn" disabled={stale || busy !== null} onClick={handleDownloadPdf}>
+          {busy === 'pdf' ? 'Preparing PDF…' : 'Production PDF'}
+        </button>
+        <button type="button" className="btn primary" disabled={stale || busy !== null} onClick={handleAddToCart}>
+          {busy === 'cart' ? 'Adding…' : 'Add to cart'}
         </button>
       </div>
+
+      {done && (
+        <div className="dialog-backdrop" role="presentation" onClick={() => setDone(null)}>
+          <div className="dialog" role="dialog" aria-modal="true" aria-label="Added to cart" onClick={(e) => e.stopPropagation()}>
+            <h2>{done.message}</h2>
+            <p className="hint">
+              {done.mode === 'demo'
+                ? 'Opened outside a store, so nothing was sent to Shopify. This is the exact body a store page would POST to /cart/add.js:'
+                : 'The store page received this cart request:'}
+            </p>
+            <table className="cart-lines">
+              <thead>
+                <tr>
+                  <th>Variant</th>
+                  <th>Qty</th>
+                  <th>Line item properties</th>
+                </tr>
+              </thead>
+              <tbody>
+                {done.payload.items.map((item, i) => (
+                  <tr key={i}>
+                    <td>{item.id}</td>
+                    <td>{item.quantity}</td>
+                    <td>
+                      {Object.entries(item.properties).map(([k, v]) => (
+                        <div key={k}>
+                          <code>{k}</code>: {v}
+                        </div>
+                      ))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <details>
+              <summary>Raw JSON</summary>
+              <pre>{JSON.stringify(done.payload, null, 2)}</pre>
+            </details>
+            <div className="button-row end">
+              <a className="btn" href={done.pdfUrl} download={`production-${config.id}.pdf`}>
+                Download production PDF
+              </a>
+              <button type="button" className="btn primary" onClick={() => setDone(null)}>
+                Keep designing
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </footer>
   );
 }

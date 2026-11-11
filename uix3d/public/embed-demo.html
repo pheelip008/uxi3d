@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Embed demo store page</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: #0f172a; background: #f8fafc; }
+      header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 20px; background: #fff; border-bottom: 1px solid #e2e8f0; }
+      header small { color: #64748b; }
+      button { font: inherit; cursor: pointer; }
+      .btn { padding: 10px 16px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; font-weight: 600; }
+      .btn.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+      .product { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; max-width: 1000px; margin: 32px auto; padding: 0 20px; }
+      .gallery { display: grid; place-items: center; aspect-ratio: 1; background: #e2e8f0; border-radius: 16px; }
+      .info { display: flex; flex-direction: column; gap: 14px; }
+      .info h1 { margin: 0; }
+      select { padding: 8px; border-radius: 8px; border: 1px solid #cbd5e1; font: inherit; }
+      .note { color: #64748b; font-size: 14px; }
+      #modal { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 16px; background: rgba(15, 23, 42, 0.55); }
+      #modal[hidden], #cart[hidden] { display: none; }
+      #frame { width: min(1400px, 100%); height: min(900px, 100%); border: 0; border-radius: 12px; background: #fff; }
+      #cart { position: fixed; top: 0; right: 0; bottom: 0; z-index: 20; width: min(440px, 100%); overflow: auto; padding: 20px; background: #fff; box-shadow: -10px 0 30px rgba(15, 23, 42, 0.2); }
+      #cart h2 { margin-top: 0; }
+      .line { padding: 12px 0; border-bottom: 1px solid #e2e8f0; font-size: 14px; }
+      .line dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; margin: 8px 0; font-size: 12px; }
+      .line dt { color: #64748b; }
+      .line dd { margin: 0; overflow-wrap: anywhere; }
+      .hidden-props { color: #64748b; font-size: 12px; }
+      @media (max-width: 720px) { .product { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <strong>Demo store</strong>
+        <small>Test page that stands in for a Shopify product page</small>
+      </div>
+      <button id="cart-button" class="btn" type="button">Cart (<span id="cart-count">0</span>)</button>
+    </header>
+
+    <main class="product">
+      <div class="gallery">
+        <svg viewBox="0 0 32 32" width="160" height="160" aria-hidden="true">
+          <path d="M16 4 3 16h26L16 4Z" fill="#2563eb" />
+          <path d="M3 16h26v4H3z" fill="#c8102e" />
+          <path d="M5 20v8M27 20v8" stroke="#334155" stroke-width="2" />
+        </svg>
+      </div>
+      <div class="info">
+        <h1>Custom Canopy Tent</h1>
+        <label>
+          Variant
+          <select id="variant">
+            <option value="45010000001">5 x 5 ft / Canopy + frame</option>
+            <option value="45010000003">6.5 x 6.5 ft / Canopy + frame</option>
+            <option value="45010000005" selected>8 x 8 ft / Canopy + frame</option>
+            <option value="45010000006">8 x 8 ft / Canopy only</option>
+          </select>
+        </label>
+        <button id="customize" class="btn primary" type="button">Customize your tent</button>
+        <p class="note">
+          The configurator opens in an iframe. Its "Add to cart" button sends the cart request to this page with
+          <code>postMessage</code>. A real Shopify theme would pass it to <code>/cart/add.js</code>; this page keeps a
+          pretend cart instead and answers with <code>CONFIGURATOR_CART_UPDATED</code>.
+        </p>
+      </div>
+    </main>
+
+    <div id="modal" hidden>
+      <iframe id="frame" title="Tent configurator"></iframe>
+    </div>
+
+    <aside id="cart" hidden aria-label="Cart">
+      <h2>Cart</h2>
+      <div id="cart-lines"></div>
+      <p><button id="cart-close" class="btn" type="button">Close</button></p>
+    </aside>
+
+    <script>
+      // The configurator lives on the same deployment here. In a real store this
+      // would be the configurator's own URL, e.g. https://tent-configurator.vercel.app
+      const APP_URL = new URL('/', window.location.href);
+      const APP_ORIGIN = APP_URL.origin;
+
+      const modal = document.getElementById('modal');
+      const frame = document.getElementById('frame');
+      const cartPanel = document.getElementById('cart');
+      const cartLines = document.getElementById('cart-lines');
+      const cart = [];
+
+      document.getElementById('customize').addEventListener('click', () => {
+        const url = new URL(APP_URL);
+        url.searchParams.set('variant_id', document.getElementById('variant').value);
+        url.searchParams.set('parent_origin', window.location.origin);
+        frame.src = url.toString();
+        modal.hidden = false;
+      });
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.hidden = true;
+      });
+      document.getElementById('cart-button').addEventListener('click', () => (cartPanel.hidden = false));
+      document.getElementById('cart-close').addEventListener('click', () => (cartPanel.hidden = true));
+
+      function add(parent, tag, text) {
+        const el = document.createElement(tag);
+        if (text !== undefined) el.textContent = text;
+        parent.appendChild(el);
+        return el;
+      }
+
+      function renderCart() {
+        document.getElementById('cart-count').textContent = String(cart.length);
+        cartLines.replaceChildren();
+        for (const entry of cart) {
+          const box = add(cartLines, 'div');
+          box.className = 'line';
+          add(box, 'strong', `Design ${entry.designId} - Rs. ${entry.total.toLocaleString('en-IN')}`);
+          for (const item of entry.items) {
+            add(box, 'div', `Variant ${item.id} x ${item.quantity}`);
+            const list = add(box, 'dl');
+            const hidden = [];
+            for (const [key, value] of Object.entries(item.properties)) {
+              if (key.startsWith('_')) {
+                hidden.push(`${key}=${value}`);
+                continue;
+              }
+              add(list, 'dt', key);
+              add(list, 'dd', value);
+            }
+            const note = add(box, 'div', `Hidden properties: ${hidden.join(', ')}`);
+            note.className = 'hidden-props';
+          }
+          const link = add(box, 'a', 'Production PDF');
+          link.href = entry.pdfUrl;
+          link.download = `production-${entry.designId}.pdf`;
+        }
+      }
+
+      window.addEventListener('message', (event) => {
+        // Only listen to our own configurator iframe.
+        if (event.origin !== APP_ORIGIN || event.source !== frame.contentWindow) return;
+        const message = event.data;
+        if (!message || typeof message.type !== 'string') return;
+
+        if (message.type === 'CONFIGURATOR_READY') {
+          console.log('Configurator is ready');
+        } else if (message.type === 'CONFIGURATOR_CLOSE') {
+          modal.hidden = true;
+        } else if (message.type === 'CONFIGURATOR_ADD_TO_CART') {
+          // Real theme: await fetch('/cart/add.js', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(message.payload) })
+          cart.push({
+            designId: message.design.id,
+            total: message.quote.total,
+            items: message.payload.items,
+            pdfUrl: URL.createObjectURL(message.productionPdf),
+          });
+          renderCart();
+          event.source.postMessage(
+            { type: 'CONFIGURATOR_CART_UPDATED', requestId: message.requestId, ok: true, message: 'Added to the store cart.' },
+            event.origin,
+          );
+          modal.hidden = true;
+          cartPanel.hidden = false;
+        }
+      });
+    </script>
+  </body>
+</html>

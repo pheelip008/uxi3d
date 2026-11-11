@@ -3,6 +3,7 @@ import { Editor2D } from './components/Editor2D.tsx';
 import { PriceBar } from './components/PriceBar.tsx';
 import { Sidebar } from './components/Sidebar.tsx';
 import { TopBar } from './components/TopBar.tsx';
+import { postToParent } from './embed/bridge.ts';
 import { useDesignSurface } from './lib/designSurface.ts';
 import { useKeyboardShortcuts } from './lib/useKeyboardShortcuts.ts';
 import { startAutosave } from './store/persistence.ts';
@@ -14,6 +15,9 @@ export default function App() {
   useDesignSurface();
   useKeyboardShortcuts();
   useEffect(() => startAutosave(), []);
+  useEffect(() => {
+    postToParent({ type: 'CONFIGURATOR_READY', version: 1 });
+  }, []);
 
   return (
     <div className="app">
