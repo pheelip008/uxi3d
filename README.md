@@ -37,6 +37,16 @@ The 2D editor, 3D tent texture, and production PDF all use the same renderer. Th
 
 The app is also structured so that products are data-driven: tent sizes, 3D models, printable sections, and variants live in product definitions instead of being hard-coded throughout the UI. That makes the approach reusable for other configurable products.
 
+### 2D editor and 3D preview
+
+For the 2D editing UI, I used **React Konva**. It provides the canvas interactions for selecting, dragging, resizing, and rotating text and logos. React and Zustand handle the surrounding tool panels, selected panel, undo/redo history, and UI state.
+
+For the 3D preview, I used **React Three Fiber** and **Three.js**, with Drei helpers for loading the `.glb` tent models and controlling the camera. The tent model has UV mapping: each printable panel corresponds to a defined area of its texture. I render the customer’s colours and artwork to one shared HTML canvas, turn that canvas into a Three.js `CanvasTexture`, and apply it to the tent’s print material. This is why an edit in 2D appears on the correct panel of the 3D model immediately.
+
+### Production PDF
+
+I used **jsPDF** to generate an A4 production summary in the browser. When the PDF is requested, the app captures fixed-size JPEG views from the Three.js canvas and the shared 2D print canvas, then combines them with the selected product, quote, panel colours, Pantone notes, artwork dimensions, and DPI information. The PDF is created as a `Blob`, ready to download or pass with the configuration to the Shopify order flow. I load jsPDF only when the customer asks for the PDF, so it does not add unnecessary weight to the main experience.
+
 ## Pricing and Shopify approach
 
 Pricing comes from a service layer, not the UI. The project includes a mock pricing service and an HTTP version that can be connected to a real pricing or CRM API later. Quotes include the product variant, printed panels, custom-colour matching, artwork setup, quantity, and discounts.
