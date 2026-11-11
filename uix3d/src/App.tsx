@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { Editor2D } from './components/Editor2D.tsx';
+import { PriceBar } from './components/PriceBar.tsx';
 import { Sidebar } from './components/Sidebar.tsx';
 import { TopBar } from './components/TopBar.tsx';
 import { useDesignSurface } from './lib/designSurface.ts';
@@ -30,9 +31,7 @@ export default function App() {
           </div>
         </section>
       </main>
-      <footer className="pricebar">
-        <span className="hint">The price will show here.</span>
-      </footer>
+      <PriceBar />
     </div>
   );
 }

@@ -428,6 +428,7 @@ button:disabled {
   height: 100%;
   cursor: pointer;
 }
+
 /* ---------- 2D editor ---------- */
 .editor2d {
   display: flex;
@@ -456,6 +457,7 @@ button:disabled {
   background: repeating-conic-gradient(#f1f4f8 0 25%, #fff 0 50%) 0 0 / 20px 20px;
   touch-action: none;
 }
+
 /* ---------- 3D preview ---------- */
 .preview3d {
   position: relative;
@@ -517,6 +519,7 @@ button:disabled {
   white-space: nowrap;
   font-size: 12px;
 }
+
 /* ---------- Artwork list ---------- */
 .layer-list {
   list-style: none;
@@ -592,4 +595,103 @@ button:disabled {
 .print-check.low {
   border-left-color: var(--danger);
   background: #fef2f2;
+}
+
+/* ---------- Price bar ---------- */
+.price-summary {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.price-total {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.price-total .amount {
+  font-size: 22px;
+  font-weight: 700;
+  transition: opacity 0.2s;
+}
+
+.price-total .amount.stale {
+  opacity: 0.45;
+}
+
+.price-note {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.breakdown {
+  position: absolute;
+  bottom: calc(100% + 14px);
+  left: 0;
+  z-index: 10;
+  width: min(460px, 92vw);
+  padding: 14px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.15);
+}
+
+.breakdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.breakdown td {
+  padding: 4px 0;
+  vertical-align: top;
+}
+
+.breakdown .qty {
+  color: var(--muted);
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+.breakdown .num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.breakdown tr.discount td {
+  color: var(--good);
+}
+
+.breakdown tfoot td {
+  border-top: 1px solid var(--border);
+  font-weight: 700;
+  padding-top: 8px;
+}
+
+.quantity {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.quantity input {
+  width: 58px;
+  text-align: center;
+}
+
+.price-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
