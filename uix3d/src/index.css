@@ -517,3 +517,79 @@ button:disabled {
   white-space: nowrap;
   font-size: 12px;
 }
+/* ---------- Artwork list ---------- */
+.layer-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.layer-list li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+.layer-list li.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.layer-name {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.layer-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  background: #eef1f5;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.print-check {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #f1f5f9;
+  font-size: 12px;
+  border-left: 4px solid var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.print-check.good {
+  border-left-color: var(--good);
+}
+
+.print-check.fair {
+  border-left-color: #d97706;
+}
+
+.print-check.low {
+  border-left-color: var(--danger);
+  background: #fef2f2;
+}
