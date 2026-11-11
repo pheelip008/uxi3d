@@ -7,12 +7,15 @@ import type { PriceQuote } from '../pricing/types.ts';
 import { usePriceQuote } from '../pricing/usePriceQuote.ts';
 import { addToCart, buildCartPayload, type AddToCartResult, type CartPayload } from '../shopify/cart.ts';
 import { useDesignStore } from '../store/designStore.ts';
+import { DownloadIcon, MinusIcon, PlusIcon } from './icons.tsx';
 
 async function makeProductionPdf(quote: PriceQuote): Promise<Blob> {
   const { config, quantity } = useDesignStore.getState();
-  renderSurfaceNow(); // make sure the texture shows the latest edit
+  // Draw the latest edit without the editor guides, take the pictures, then put the guides back.
+  renderSurfaceNow({ guides: false });
   const views = previewBridge.capture(['front', 'right', 'back', 'left']);
   const layout = designCanvas.toDataURL('image/jpeg', 0.92);
+  renderSurfaceNow();
   const { createProductionPdf } = await import('../pdf/productionPdf.ts');
   return createProductionPdf({ config, quote, quantity, views, layout });
 }
@@ -123,8 +126,8 @@ export function PriceBar() {
 
       <label className="quantity">
         <span>Qty</span>
-        <button type="button" className="icon-btn" aria-label="Fewer" onClick={() => setQuantity(quantity - 1)}>
-          −
+        <button type="button" className="icon-btn" aria-label="Fewer" disabled={quantity <= 1} onClick={() => setQuantity(quantity - 1)}>
+          <MinusIcon width={16} height={16} />
         </button>
         <input
           type="number"
@@ -134,7 +137,7 @@ export function PriceBar() {
           onChange={(e) => setQuantity(Number(e.target.value))}
         />
         <button type="button" className="icon-btn" aria-label="More" onClick={() => setQuantity(quantity + 1)}>
-          +
+          <PlusIcon width={16} height={16} />
         </button>
       </label>
 
@@ -144,10 +147,17 @@ export function PriceBar() {
             {actionError}
           </span>
         )}
-        <button type="button" className="btn" disabled={stale || busy !== null} onClick={handleDownloadPdf}>
-          {busy === 'pdf' ? 'Preparing PDF…' : 'Production PDF'}
+        <button
+          type="button"
+          className="btn pill"
+          title="Download the production PDF"
+          disabled={stale || busy !== null}
+          onClick={handleDownloadPdf}
+        >
+          <DownloadIcon width={18} height={18} />
+          <span className="pdf-label">{busy === 'pdf' ? 'Preparing PDF…' : 'Production PDF'}</span>
         </button>
-        <button type="button" className="btn primary" disabled={stale || busy !== null} onClick={handleAddToCart}>
+        <button type="button" className="btn primary pill" disabled={stale || busy !== null} onClick={handleAddToCart}>
           {busy === 'cart' ? 'Adding…' : 'Add to cart'}
         </button>
       </div>
@@ -190,10 +200,10 @@ export function PriceBar() {
               <pre>{JSON.stringify(done.payload, null, 2)}</pre>
             </details>
             <div className="button-row end">
-              <a className="btn" href={done.pdfUrl} download={`production-${config.id}.pdf`}>
+              <a className="btn pill" href={done.pdfUrl} download={`production-${config.id}.pdf`}>
                 Download production PDF
               </a>
-              <button type="button" className="btn primary" onClick={() => setDone(null)}>
+              <button type="button" className="btn primary pill" onClick={() => setDone(null)}>
                 Keep designing
               </button>
             </div>

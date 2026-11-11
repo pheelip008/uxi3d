@@ -94,6 +94,14 @@ export interface ImageAsset {
   height: number;
 }
 
+/** Fabric colour of one section. */
+export interface SectionColour {
+  /** Hex colour used on screen and in the print file. */
+  color: string;
+  /** Pantone code when the customer entered one (e.g. "Pantone 185 C"), so print can match the ink. */
+  pantone?: string;
+}
+
 /** The saved configuration. This is the single source of truth for the design. */
 export interface DesignConfig {
   schemaVersion: 1;
@@ -101,7 +109,7 @@ export interface DesignConfig {
   productId: string;
   sizeId: string;
   frame: string;
-  sections: Record<string, { color: string }>;
+  sections: Record<string, SectionColour>;
   layers: Layer[];
   assets: Record<string, ImageAsset>;
   updatedAt: string;

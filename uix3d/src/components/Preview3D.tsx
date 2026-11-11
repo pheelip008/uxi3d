@@ -7,14 +7,16 @@ import {
   useProgress,
 } from '@react-three/drei';
 import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber';
-import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { getSection, getSize, TENT } from '../data/tent.ts';
 import { designCanvas, useSurfaceVersion } from '../lib/designSurface.ts';
 import { pointInPolygon } from '../lib/geometry.ts';
 import { previewBridge, type ViewName } from '../lib/previewBridge.ts';
 import { useDesignStore } from '../store/designStore.ts';
+import { useUiStore, type ViewMode } from '../store/uiStore.ts';
 import type { Side } from '../types.ts';
+import { CubeIcon } from './icons.tsx';
 
 /** Camera directions (x, y, z) for the view buttons; "front" is +Z. */
 const VIEW_DIRECTIONS: Record<ViewName, [number, number, number]> = {
@@ -56,7 +58,14 @@ function useDesignTexture(): THREE.CanvasTexture {
   return designTexture;
 }
 
-function TentScene() {
+interface TentSceneProps {
+  /** The dock changes size between the small preview and the full 3D view. */
+  mode: ViewMode;
+  /** The camera left the last preset (the user orbited, or it turned to a panel). */
+  onFreeView: () => void;
+}
+
+function TentScene({ mode, onFreeView }: TentSceneProps) {
   const sizeId = useDesignStore((s) => s.config.sizeId);
   const frame = useDesignStore((s) => s.config.frame);
   const selectedSectionId = useDesignStore((s) => s.selectedSectionId);
@@ -65,6 +74,8 @@ function TentScene() {
   const texture = useDesignTexture();
   const controls = useRef<CameraControls>(null);
   const { gl, scene, camera, invalidate, get } = useThree();
+  const canvasWidth = useThree((s) => s.size.width);
+  const canvasHeight = useThree((s) => s.size.height);
 
   // Put our texture on the printable fabric and hide the frame for "canopy only".
   useLayoutEffect(() => {
@@ -127,6 +138,32 @@ function TentScene() {
     controls.current?.setLookAt(position.x, position.y, position.z, target.x, target.y, target.z, false);
   }, [pose]);
 
+  // Switching between the small preview and the full view changes the canvas size,
+  // so fit the tent again once the new size has arrived.
+  const modeChangedAt = useRef(0);
+  useEffect(() => {
+    modeChangedAt.current = performance.now();
+  }, [mode]);
+  useEffect(() => {
+    if (performance.now() - modeChangedAt.current > 800) return;
+    const { position, target } = pose('home');
+    controls.current?.setLookAt(position.x, position.y, position.z, target.x, target.y, target.z, false);
+  }, [mode, canvasWidth, canvasHeight, pose]);
+
+  // Keep the point the camera orbits around on the tent, so panning cannot lose it.
+  useEffect(() => {
+    const r = bounds.radius * 0.45;
+    controls.current?.setBoundary(
+      new THREE.Box3(new THREE.Vector3(-r, 0, -r), new THREE.Vector3(r, bounds.top, r)),
+    );
+  }, [bounds]);
+
+  // Zoom limits: never inside the canopy, never so far out that the tent is a dot.
+  // The far limit leaves room for the "fit" distance on narrow (portrait) canvases.
+  const fitDistance = poseFor(VIEW_DIRECTIONS.home, 0, 1, canvasWidth / Math.max(1, canvasHeight)).position.length();
+  const minDistance = bounds.radius * 1.15;
+  const maxDistance = Math.max(bounds.radius * 3.2, fitDistance * 1.3);
+
   // Turn the camera to whichever panel is selected, from any part of the UI.
   const focusedSection = useRef(selectedSectionId);
   useEffect(() => {
@@ -141,7 +178,8 @@ function TentScene() {
       0.75,
     );
     controls.current?.setLookAt(position.x, position.y, position.z, target.x, target.y, target.z, true);
-  }, [selectedSectionId, size, bounds, poseFor]);
+    onFreeView();
+  }, [selectedSectionId, size, bounds, poseFor, onFreeView]);
 
   // Let the view buttons and the PDF use this scene.
   useEffect(
@@ -220,10 +258,11 @@ function TentScene() {
       <CameraControls
         ref={controls}
         makeDefault
-        minDistance={bounds.radius * 1.2}
-        maxDistance={bounds.radius * 5}
+        minDistance={minDistance}
+        maxDistance={maxDistance}
         maxPolarAngle={Math.PI / 2 - 0.05}
         smoothTime={0.35}
+        onControlStart={onFreeView}
       />
     </>
   );
@@ -237,7 +276,7 @@ function LoadingOverlay() {
 }
 
 const VIEW_BUTTONS: { view: ViewName; label: string }[] = [
-  { view: 'home', label: '3/4' },
+  { view: 'home', label: 'Orbit' },
   { view: 'front', label: 'Front' },
   { view: 'back', label: 'Back' },
   { view: 'left', label: 'Left' },
@@ -246,8 +285,24 @@ const VIEW_BUTTONS: { view: ViewName; label: string }[] = [
 ];
 
 export default function Preview3D() {
+  const mode = useUiStore((s) => s.mode);
+  const setMode = useUiStore((s) => s.setMode);
+  const [activeView, setActiveView] = useState<ViewName | null>('home');
+  const [shownMode, setShownMode] = useState(mode);
+  // A mode switch refits the camera to the overview, so that preset is active again.
+  if (shownMode !== mode) {
+    setShownMode(mode);
+    setActiveView('home');
+  }
+  const handleFreeView = useCallback(() => setActiveView(null), []);
+
+  function goTo(view: ViewName) {
+    previewBridge.goTo(view);
+    setActiveView(view);
+  }
+
   return (
-    <div className="preview3d">
+    <div className="preview3d" data-mode={mode}>
       <Canvas frameloop="demand" flat dpr={[1, 2]} camera={{ position: [5, 3.5, 6], fov: 35, near: 0.1, far: 100 }}>
         <color attach="background" args={['#eef2f7']} />
         <hemisphereLight args={['#ffffff', '#c7ced8', 1.4]} />
@@ -259,20 +314,29 @@ export default function Preview3D() {
           <Lightformer intensity={1.2} position={[6, 2, 4]} rotation-y={-Math.PI / 2} scale={[12, 4, 1]} />
         </Environment>
         <Suspense fallback={null}>
-          <TentScene />
+          <TentScene mode={mode} onFreeView={handleFreeView} />
         </Suspense>
         <ContactShadows position={[0, 0.002, 0]} scale={12} blur={2.4} opacity={0.4} far={4} resolution={512} />
       </Canvas>
 
       <LoadingOverlay />
-      <div className="view-buttons" role="group" aria-label="Camera views">
-        {VIEW_BUTTONS.map((b) => (
-          <button key={b.view} type="button" onClick={() => previewBridge.goTo(b.view)}>
-            {b.label}
+      {mode === '3d' ? (
+        <div className="view-presets" role="group" aria-label="Camera views">
+          {VIEW_BUTTONS.map((b) => (
+            <button key={b.view} type="button" aria-pressed={activeView === b.view} onClick={() => goTo(b.view)}>
+              {b.label}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <>
+          <span className="dock-label">3D preview</span>
+          <button type="button" className="dock-expand" title="Open the full 3D view" onClick={() => setMode('3d')}>
+            <CubeIcon width={16} height={16} />
+            3D
           </button>
-        ))}
-      </div>
-      <p className="preview-hint">Drag to orbit · scroll to zoom · click a panel to select it</p>
+        </>
+      )}
     </div>
   );
 }

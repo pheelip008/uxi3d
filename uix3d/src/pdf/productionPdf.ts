@@ -130,13 +130,21 @@ export async function createProductionPdf(input: ProductionPdfInput): Promise<Bl
 
   heading('Panel colours');
   for (const s of size.sections) {
-    const color = config.sections[s.id]?.color ?? '#ffffff';
+    const { color, pantone } = config.sections[s.id] ?? { color: '#ffffff' };
     doc.setFillColor(color);
     doc.setDrawColor(160);
     doc.rect(MARGIN, y - 3.2, 4, 4, 'FD');
     doc.text(s.label, MARGIN + 7, y);
     doc.text(color.toUpperCase(), MARGIN + 45, y);
-    doc.text(isStandardColour(color) ? 'Standard fabric colour' : 'Custom colour - match required', MARGIN + 70, y);
+    doc.text(
+      pantone
+        ? `${pantone} - match this ink`
+        : isStandardColour(color)
+          ? 'Standard fabric colour'
+          : 'Custom colour - match required',
+      MARGIN + 70,
+      y,
+    );
     y += 5.5;
   }
 

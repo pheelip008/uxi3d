@@ -9,18 +9,20 @@ Built with React 19, TypeScript, Vite, three.js (React Three Fiber), Konva, Zust
 
 ## Features
 
+- **Editor layout:** a `2D | 3D` switch in the header, a tool rail (Tent, Colours, Uploads, Text) with a floating panel for each tool, the print layout on a card in the middle, a small live 3D preview beside it, and a floating toolbar for undo/redo, zoom, panel view and guides.
 - **Product options:** 5 x 5, 6.5 x 6.5 and 8 x 8 ft tents, with or without the frame. Each option is a Shopify variant with its own price.
-- **Eight print sections:** four roof peaks and four valances. Each has its own colour (16 fabric colours, or a custom colour).
-- **Text and images on any section:** font, size, colour, bold, italic, rotation and opacity. Layers can be reordered, duplicated, or copied to the matching sections.
-- **2D editor:** drag, resize and rotate on the flat print layout. Shows either the whole layout or just one section, turned upright.
-- **Live 3D preview:** the 2D design is the texture on the 3D model, so both always match. Click a section on the tent to select it. The camera turns to whichever section is selected.
+- **Eight print sections:** four roof peaks and four valances. A "tent part" dropdown colours the whole tent, all peaks, all valances or one panel, from 16 fabric swatches, a colour picker, or a typed **Pantone code** (e.g. `185 C`) or hex value. Pantone codes travel with the order so print can match the ink.
+- **Uploads library:** add several images at once (button or drag and drop). Uploads stay in the library, so one logo can be placed on several panels; deleting it from the canvas keeps it in the library.
+- **Text and images on any section:** font, size, colour, bold, italic, rotation and opacity. Layers can be reordered, centred, duplicated, or copied to the matching sections.
+- **2D editor:** drag, resize and rotate on the flat print layout. Zoom from "fit" to 400% (buttons or scroll wheel), drag empty space to pan, or show one section turned upright. "Guides" draws the texture grid and panel names, in 2D and on the 3D model.
+- **Live 3D preview:** the 2D design is the texture on the 3D model, so both always match. The full 3D view has camera presets (Orbit, Front, Back, Left, Right, Top), zoom limits so the camera can neither enter the canopy nor lose the tent, and a pan boundary around the tent. Click a section on the tent to select it.
 - **Print checks:** real print sizes in cm, and a DPI warning for low-resolution logos.
 - **Undo/redo and shortcuts:** Ctrl+Z / Ctrl+Shift+Z, Delete, Ctrl+D, and arrow keys to nudge.
 - **Saving:** designs autosave in the browser and can be exported or imported as JSON.
 - **Dynamic pricing:** from a pricing service (a mock by default, or a real API through an environment variable).
 - **Add to cart:** produces a Shopify `/cart/add.js` body. Inside a store iframe, it is sent to the store page with `postMessage`.
-- **Production PDF:** price breakdown, four 3D views, the print layout, panel colours and an artwork list. It carries the same configuration ID as the cart line.
-- **Works on phones:** the 2D and 3D views switch with tabs, and the price bar stays at the bottom.
+- **Production PDF:** price breakdown, four 3D views, the print layout, panel colours (with Pantone codes) and an artwork list. It carries the same configuration ID as the cart line.
+- **Works on phones:** the tool rail moves to the bottom, panels open as a sheet above it, and the header switch flips between 2D and 3D.
 
 ## Run it locally
 
@@ -73,15 +75,15 @@ The app lives in `uix3d/`; paths below are relative to it.
 | Path | What is in it |
 | --- | --- |
 | `src/types.ts` | The data model: sections, sizes, layers, `DesignConfig` |
-| `src/data/` | Product definition (`tent.ts`: sizes, section outlines, colours) and the mock Shopify catalog (`catalog.ts`) |
-| `src/store/` | Zustand store with history (`designStore.ts`) and saving/loading (`persistence.ts`) |
+| `src/data/` | Product definition (`tent.ts`: sizes, section outlines, colours), Pantone lookup (`pantone.ts`) and the mock Shopify catalog (`catalog.ts`) |
+| `src/store/` | Zustand store with history (`designStore.ts`), editor UI state that is never saved or undone (`uiStore.ts`: 2D/3D mode, open tool, zoom, guides) and saving/loading (`persistence.ts`) |
 | `src/lib/` | Geometry, the canvas renderer, fonts, images, print sizes, keyboard shortcuts |
-| `src/components/` | Top bar, sidebar panels, 2D editor, 3D preview, price bar |
+| `src/components/` | Header, tool rail and tool panels (`tools/`), 2D editor, canvas toolbar, 3D preview, price bar |
 | `src/pricing/` | Pricing engine (pure function), pricing service (mock or HTTP), React hook, tests |
 | `src/shopify/` | Cart payload builder and add-to-cart |
 | `src/embed/` | `postMessage` bridge to the parent store page |
 | `src/pdf/` | Production PDF |
-| `public/models/` | Compressed tent models |
+| `public/models/` | Tent models (one `.glb` per size) |
 | `public/embed-demo.html` | A stand-in store page that embeds the configurator in an iframe |
 
 ### Adding another product
@@ -101,7 +103,7 @@ This is the design that gets saved, exported and sent to the cart (shortened):
   "frame": "frame",
   "sections": {
     "peak_front": { "color": "#0b2545" },
-    "valance_front": { "color": "#c8102e" }
+    "valance_front": { "color": "#e4002b", "pantone": "Pantone 185 C" }
   },
   "layers": [
     {
@@ -125,7 +127,8 @@ This is the design that gets saved, exported and sent to the cart (shortened):
 }
 ```
 
-- Image layers have `assetId`, `width` and `height`. `assets` holds the uploaded file (as a data URL) and its pixel size.
+- Image layers have `assetId`, `width` and `height`. `assets` is the uploads library: each uploaded file (as a data URL) and its pixel size, kept even when it is not placed on the tent.
+- A section colour may carry a `pantone` code next to its on-screen hex value.
 - When the customer changes size, every layer is moved and scaled onto the matching section of the new model.
 
 ## Pricing
@@ -173,7 +176,7 @@ Mock Shopify variants:
         "Size": "8 x 8 ft",
         "Frame": "Canopy + frame",
         "Printed panels": "Front peak, Front valance",
-        "Panel colours": "Front peak #0B2545, Back peak #0B2545, ...",
+        "Panel colours": "Front peak #0B2545, ..., Front valance Pantone 185 C (#E4002B), ...",
         "Text": "YOUR BRAND | yourbrand.com",
         "_configuration_id": "cfg_14eea6bd",
         "_configuration_updated_at": "2026-11-11T03:28:04.580Z",
@@ -230,7 +233,7 @@ The store page sends the payload to `/cart/add.js` and answers with `CONFIGURATO
 Made in the browser with jsPDF, which is loaded only when it is needed. It contains:
 
 - **Page 1:** order details (product, frame, Shopify variant, quantity, quote ID), the price breakdown, and the front, right, back and left 3D views. The views are rendered at a fixed 1200 x 900 size, whatever the screen.
-- **Page 2:** the print layout exactly as it goes on the fabric, with each section labelled, and a table of panel colours that flags custom colour matches.
+- **Page 2:** the print layout exactly as it goes on the fabric, with each section labelled, and a table of panel colours that shows Pantone codes and flags custom colour matches. Editor guides are never drawn into the PDF.
 - **Artwork list:** every text and image, with print size in cm, DPI and rotation.
 - **Every page:** a footer with the configuration ID, which matches the cart line property `_configuration_id`. The PDF's keywords metadata also holds the configuration, quote and variant IDs.
 
@@ -255,6 +258,7 @@ The project is a static site. On Vercel:
 
 - Uploaded images are stored inside the design JSON as data URLs. That is fine for a demo, but a real setup should upload them to storage and keep only the URL.
 - Fonts come from Google Fonts. The PDF lists font names, but the print file is the rendered layout image, not vector artwork.
+- The Pantone table covers about 60 common coated colours with approximate screen values. A real setup would use the licensed Pantone library.
 - The 6.5 x 6.5 ft model was exported at the 5 ft size, so the app scales it up by 1.3.
 - The models are the original files (about 10 MB each), so the first 3D load is slow on a weak connection. Compressing them with `gltf-transform` (meshopt geometry, quantisation, 1024 px WebP textures) brings each to about 0.4 MB with no visible change. The code finds parts by material name, so it works with either version:
   ```bash

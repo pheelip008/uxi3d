@@ -16,13 +16,16 @@ import type {
   ImageAsset,
   ImageLayer,
   Layer,
+  SectionColour,
   SectionDefinition,
+  SizeDefinition,
   TextLayer,
 } from '../types.ts';
 
 export type EditorView = 'layout' | 'section';
 export type SaveStatus = 'idle' | 'saved' | 'failed';
-export type ColourTarget = 'peaks' | 'valances' | 'all';
+/** Which part of the tent a colour goes on: a group of panels or one section id. */
+export type ColourTarget = 'all' | 'peaks' | 'valances' | (string & {});
 export type LayerPatch =
   | Partial<Omit<TextLayer, 'id' | 'type'>>
   | Partial<Omit<ImageLayer, 'id' | 'type'>>;
@@ -42,6 +45,40 @@ function contrastColor(hex: string): string {
 
 function defaultFontSize(section: SectionDefinition): number {
   return section.kind === 'peak' ? longSide(section) * 0.07 : shortSide(section) * 0.45;
+}
+
+/** The sections a colour target covers. */
+export function sectionsInTarget(size: SizeDefinition, target: ColourTarget): SectionDefinition[] {
+  if (target === 'all') return size.sections;
+  if (target === 'peaks') return size.sections.filter((s) => s.kind === 'peak');
+  if (target === 'valances') return size.sections.filter((s) => s.kind === 'valance');
+  return size.sections.filter((s) => s.id === target);
+}
+
+/** A new image layer for an uploaded image, fitted inside the panel and kept in proportion. */
+function imageLayerFor(section: SectionDefinition, asset: ImageAsset): ImageLayer {
+  const aspect = asset.width / asset.height;
+  const maxW = longSide(section) * (section.kind === 'peak' ? 0.4 : 0.5);
+  const maxH = shortSide(section) * (section.kind === 'peak' ? 0.4 : 0.75);
+  let width = maxW;
+  let height = width / aspect;
+  if (height > maxH) {
+    height = maxH;
+    width = height * aspect;
+  }
+  const [x, y] = sectionAnchor(section);
+  return {
+    id: createId('lyr'),
+    type: 'image',
+    sectionId: section.id,
+    x,
+    y,
+    rotation: section.upright,
+    opacity: 1,
+    assetId: asset.id,
+    width,
+    height,
+  };
 }
 
 export function createDefaultDesign(sizeId = DEFAULT_SIZE_ID): DesignConfig {
@@ -116,10 +153,15 @@ interface DesignActions {
   selectSection: (sectionId: string) => void;
   selectLayer: (layerId: string | null) => void;
   setEditorView: (view: EditorView) => void;
-  setSectionColor: (sectionId: string, color: string) => void;
-  applyColor: (color: string, target: ColourTarget) => void;
+  /** Colour a part of the tent: every panel, all peaks, all valances or one section. */
+  applyColor: (target: ColourTarget, colour: SectionColour) => void;
   addText: () => void;
+  /** Add an uploaded file to the image library and place it on the selected panel. */
   addImage: (asset: Omit<ImageAsset, 'id'>) => void;
+  /** Place an image that is already in the library on the selected panel. */
+  placeImage: (assetId: string) => void;
+  /** Delete an image from the library, along with every place it is used. */
+  removeAsset: (assetId: string) => void;
   updateLayer: (layerId: string, patch: LayerPatch, mergeKey?: string) => void;
   nudgeLayer: (layerId: string, dx: number, dy: number) => void;
   removeLayer: (layerId: string) => void;
@@ -218,22 +260,14 @@ export const useDesignStore = create<DesignState & DesignActions>()((set, get) =
 
     setEditorView: (editorView) => set({ editorView }),
 
-    setSectionColor: (sectionId, color) =>
-      commit(
-        (c) => ({ ...c, sections: { ...c.sections, [sectionId]: { color } } }),
-        `colour:${sectionId}`,
-      ),
-
-    applyColor: (color, target) =>
+    applyColor: (target, colour) =>
       commit((c) => {
         const sections = { ...c.sections };
-        for (const s of getSize(c.sizeId).sections) {
-          if (target === 'all' || (target === 'peaks') === (s.kind === 'peak')) {
-            sections[s.id] = { color };
-          }
+        for (const s of sectionsInTarget(getSize(c.sizeId), target)) {
+          sections[s.id] = colour.pantone ? { color: colour.color, pantone: colour.pantone } : { color: colour.color };
         }
         return { ...c, sections };
-      }),
+      }, `colour:${target}`),
 
     addText: () => {
       const { config, selectedSectionId } = get();
@@ -260,37 +294,34 @@ export const useDesignStore = create<DesignState & DesignActions>()((set, get) =
 
     addImage: (input) => {
       const { config, selectedSectionId } = get();
-      const section = getSection(getSize(config.sizeId), selectedSectionId);
       const asset: ImageAsset = { ...input, id: createId('img') };
-      // Fit the image inside the panel, keeping its proportions.
-      const aspect = asset.width / asset.height;
-      const maxW = longSide(section) * (section.kind === 'peak' ? 0.4 : 0.5);
-      const maxH = shortSide(section) * (section.kind === 'peak' ? 0.4 : 0.75);
-      let width = maxW;
-      let height = width / aspect;
-      if (height > maxH) {
-        height = maxH;
-        width = height * aspect;
-      }
-      const [x, y] = sectionAnchor(section);
-      const layer: ImageLayer = {
-        id: createId('lyr'),
-        type: 'image',
-        sectionId: section.id,
-        x,
-        y,
-        rotation: section.upright,
-        opacity: 1,
-        assetId: asset.id,
-        width,
-        height,
-      };
+      const layer = imageLayerFor(getSection(getSize(config.sizeId), selectedSectionId), asset);
       commit((c) => ({
         ...c,
         assets: { ...c.assets, [asset.id]: asset },
         layers: [...c.layers, layer],
       }));
       set({ selectedLayerId: layer.id });
+    },
+
+    placeImage: (assetId) => {
+      const { config, selectedSectionId } = get();
+      const asset = config.assets[assetId];
+      if (!asset) return;
+      const layer = imageLayerFor(getSection(getSize(config.sizeId), selectedSectionId), asset);
+      commit((c) => ({ ...c, layers: [...c.layers, layer] }));
+      set({ selectedLayerId: layer.id });
+    },
+
+    removeAsset: (assetId) => {
+      commit((c) => {
+        if (!c.assets[assetId]) return c;
+        const assets = { ...c.assets };
+        delete assets[assetId];
+        const layers = c.layers.filter((l) => l.type !== 'image' || l.assetId !== assetId);
+        return { ...c, assets, layers };
+      });
+      set({ selectedLayerId: keepSelection(get().config) });
     },
 
     updateLayer: (layerId, patch, mergeKey) =>
@@ -317,17 +348,12 @@ export const useDesignStore = create<DesignState & DesignActions>()((set, get) =
     },
 
     removeLayer: (layerId) => {
-      commit((c) => {
-        const layer = c.layers.find((l) => l.id === layerId);
-        if (!layer) return c;
-        const layers = c.layers.filter((l) => l.id !== layerId);
-        const assets = { ...c.assets };
-        // Drop the image file too when nothing else uses it.
-        if (layer.type === 'image' && !layers.some((l) => l.type === 'image' && l.assetId === layer.assetId)) {
-          delete assets[layer.assetId];
-        }
-        return { ...c, layers, assets };
-      });
+      // The image stays in the uploads library, so it can be placed again.
+      commit((c) =>
+        c.layers.some((l) => l.id === layerId)
+          ? { ...c, layers: c.layers.filter((l) => l.id !== layerId) }
+          : c,
+      );
       if (get().selectedLayerId === layerId) set({ selectedLayerId: null });
     },
 

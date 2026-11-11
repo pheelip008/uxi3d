@@ -1,5 +1,6 @@
 import type { DesignConfig, Point, SizeDefinition, TextLayer } from '../types.ts';
 import { ensureFontLoaded, fontString } from './fonts.ts';
+import { sectionAnchor } from './geometry.ts';
 import { getDecodedImage } from './images.ts';
 
 /** Resolution of the canopy texture. */
@@ -34,12 +35,68 @@ export function measureText(layer: TextLayer): { width: number; height: number }
   return { width: widest * k, height: lines.length * px * LINE_HEIGHT * k };
 }
 
+export interface RenderOptions {
+  /** Draw a UV grid and the panel names on top (editor aid, never printed). */
+  guides?: boolean;
+}
+
+/** Grid every 0.05 UV plus each panel's outline and name, so you can see how 2D maps onto the model. */
+function drawGuides(ctx: CanvasRenderingContext2D, size: SizeDefinition, S: number) {
+  ctx.save();
+  ctx.globalAlpha = 1;
+  ctx.setLineDash([]);
+  ctx.lineWidth = Math.max(1, S * 0.0007);
+  ctx.strokeStyle = 'rgba(236, 0, 140, 0.45)';
+  ctx.beginPath();
+  for (let i = 1; i < 20; i++) {
+    const v = (i / 20) * S;
+    ctx.moveTo(v, 0);
+    ctx.lineTo(v, S);
+    ctx.moveTo(0, v);
+    ctx.lineTo(S, v);
+  }
+  ctx.stroke();
+
+  ctx.lineWidth = S * 0.002;
+  ctx.setLineDash([S * 0.008, S * 0.005]);
+  ctx.strokeStyle = '#ec008c';
+  for (const section of size.sections) {
+    tracePolygon(ctx, section.polygon, S);
+    ctx.stroke();
+  }
+
+  ctx.setLineDash([]);
+  ctx.font = `700 ${Math.round(S * 0.017)}px Inter, system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  for (const section of size.sections) {
+    const [x, y] = sectionAnchor(section);
+    const label = section.label.toUpperCase();
+    ctx.save();
+    ctx.translate(x * S, y * S);
+    ctx.rotate((section.upright * Math.PI) / 180);
+    ctx.lineWidth = S * 0.004;
+    ctx.strokeStyle = '#000000';
+    ctx.strokeText(label, 0, 0);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(label, 0, 0);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
 /**
  * Draw the whole design onto a square canvas laid out like the model's UV map.
  * This one function feeds the 3D texture, the 2D editor background and the PDF,
  * so all three always match.
  */
-export function renderDesign(canvas: HTMLCanvasElement, config: DesignConfig, size: SizeDefinition): void {
+export function renderDesign(
+  canvas: HTMLCanvasElement,
+  config: DesignConfig,
+  size: SizeDefinition,
+  options: RenderOptions = {},
+): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
   const S = canvas.width;
@@ -95,4 +152,6 @@ export function renderDesign(canvas: HTMLCanvasElement, config: DesignConfig, si
     }
     ctx.restore();
   }
+
+  if (options.guides) drawGuides(ctx, size, S);
 }

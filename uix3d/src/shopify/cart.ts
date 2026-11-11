@@ -1,4 +1,5 @@
 import { findVariant } from '../data/catalog.ts';
+import { describeColour } from '../data/pantone.ts';
 import { getFrameLabel, getSize } from '../data/tent.ts';
 import { isEmbedded, postToParent, waitForCartUpdate } from '../embed/bridge.ts';
 import { createId } from '../lib/ids.ts';
@@ -32,7 +33,7 @@ export function buildCartPayload(config: DesignConfig, quote: PriceQuote, quanti
       Frame: getFrameLabel(config.frame),
       'Printed panels': printed.map((s) => s.label).join(', ') || 'None',
       'Panel colours': size.sections
-        .map((s) => `${s.label} ${config.sections[s.id]?.color.toUpperCase()}`)
+        .map((s) => `${s.label} ${describeColour(config.sections[s.id])}`)
         .join(', '),
       ...(texts.length > 0 && { Text: texts.join(' | ') }),
       _configuration_id: config.id,

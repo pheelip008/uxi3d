@@ -15,25 +15,46 @@ import { designCanvas, useSurfaceVersion } from '../lib/designSurface.ts';
 import { boundingBox, clamp, normalizeAngle, pointInPolygon, sectionAnchor } from '../lib/geometry.ts';
 import { measureText } from '../lib/renderDesign.ts';
 import { useDesignStore, type EditorView, type LayerPatch } from '../store/designStore.ts';
+import { MAX_ZOOM, useUiStore } from '../store/uiStore.ts';
 import type { Layer, SectionDefinition } from '../types.ts';
 
 const ACCENT = '#2563eb';
+const WHEEL_STEP = 1.15;
 
 function layerSize(layer: Layer) {
   return layer.type === 'text' ? measureText(layer) : { width: layer.width, height: layer.height };
 }
 
-/** Group transform that shows either the whole UV layout or one panel, turned upright. */
-function computeView(width: number, height: number, section: SectionDefinition, mode: EditorView) {
+/**
+ * Group transform that shows either the whole UV layout or one panel turned upright,
+ * then applies the zoom and pan (pan is in layout units, so it survives resizes).
+ */
+function computeView(
+  width: number,
+  height: number,
+  section: SectionDefinition,
+  mode: EditorView,
+  zoom: number,
+  pan: [number, number],
+) {
+  let fit = { offsetX: 0.5, offsetY: 0.5, rotation: 0, scale: Math.min(width, height) * 0.97 };
   if (mode === 'section') {
     const box = boundingBox(section.polygon);
     const turned = Math.abs(section.upright) === 90;
     const w = turned ? box.height : box.width;
     const h = turned ? box.width : box.height;
     const scale = Math.min(width / (w * 1.12), height / (h * 1.3));
-    return { x: width / 2, y: height / 2, offsetX: box.cx, offsetY: box.cy, rotation: -section.upright, scale };
+    fit = { offsetX: box.cx, offsetY: box.cy, rotation: -section.upright, scale };
   }
-  return { x: width / 2, y: height / 2, offsetX: 0.5, offsetY: 0.5, rotation: 0, scale: Math.min(width, height) * 0.97 };
+  return {
+    x: width / 2,
+    y: height / 2,
+    offsetX: fit.offsetX + pan[0],
+    offsetY: fit.offsetY + pan[1],
+    rotation: fit.rotation,
+    scale: fit.scale * zoom,
+    fitOffset: [fit.offsetX, fit.offsetY] as const,
+  };
 }
 
 function setCursor(e: Konva.KonvaEventObject<MouseEvent>, cursor: string) {
@@ -58,11 +79,14 @@ export function Editor2D() {
   const selectedLayerId = useDesignStore((s) => s.selectedLayerId);
   const editorView = useDesignStore((s) => s.editorView);
   const version = useSurfaceVersion((s) => s.version);
-  const { selectSection, selectLayer, updateLayer, setEditorView } = useDesignStore.getState();
+  const zoom = useUiStore((s) => s.zoom);
+  const pan = useUiStore((s) => s.pan);
+  const guides = useUiStore((s) => s.guides);
+  const { selectSection, selectLayer, updateLayer } = useDesignStore.getState();
 
   const size = getSize(config.sizeId);
   const selectedSection = getSection(size, selectedSectionId);
-  const view = computeView(box.width, box.height, selectedSection, editorView);
+  const view = computeView(box.width, box.height, selectedSection, editorView, zoom, pan);
 
   // Keep the stage the same size as its container.
   useEffect(() => {
@@ -89,13 +113,54 @@ export function Editor2D() {
     transformer.getLayer()?.batchDraw();
   });
 
+  /**
+   * Pressing on empty canvas: a click selects the panel under the pointer,
+   * a drag moves the view when zoomed in.
+   */
   function handleStagePointerDown(e: Konva.KonvaEventObject<PointerEvent>) {
     if (e.target !== e.target.getStage()) return; // a layer or a handle handles itself
     const pos = groupRef.current?.getRelativePointerPosition();
-    if (!pos) return;
-    const hit = size.sections.find((s) => pointInPolygon([pos.x, pos.y], s.polygon));
-    selectLayer(null);
-    if (hit) selectSection(hit.id);
+    const start = { x: e.evt.clientX, y: e.evt.clientY, pan: useUiStore.getState().pan, moved: false };
+    const angle = (-view.rotation * Math.PI) / 180;
+
+    const onMove = (ev: PointerEvent) => {
+      const dx = ev.clientX - start.x;
+      const dy = ev.clientY - start.y;
+      if (!start.moved && Math.hypot(dx, dy) < 4) return;
+      start.moved = true;
+      const ui = useUiStore.getState();
+      if (ui.zoom <= 1) return;
+      // Screen movement back into layout units: undo the view's rotation and scale.
+      const lx = (dx * Math.cos(angle) - dy * Math.sin(angle)) / view.scale;
+      const ly = (dx * Math.sin(angle) + dy * Math.cos(angle)) / view.scale;
+      ui.setView(ui.zoom, [start.pan[0] - lx, start.pan[1] - ly]);
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      if (start.moved || !pos) return;
+      const hit = size.sections.find((s) => pointInPolygon([pos.x, pos.y], s.polygon));
+      selectLayer(null);
+      if (hit) selectSection(hit.id);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  }
+
+  /** Scroll to zoom between "fit" and 400%, keeping the point under the pointer still. */
+  function handleWheel(e: Konva.KonvaEventObject<WheelEvent>) {
+    e.evt.preventDefault();
+    const point = groupRef.current?.getRelativePointerPosition();
+    if (!point) return;
+    const ui = useUiStore.getState();
+    const next = clamp(ui.zoom * (e.evt.deltaY < 0 ? WHEEL_STEP : 1 / WHEEL_STEP), 1, MAX_ZOOM);
+    if (next === ui.zoom) return;
+    const k = ui.zoom / next;
+    const offsetX = point.x - k * (point.x - view.offsetX);
+    const offsetY = point.y - k * (point.y - view.offsetY);
+    ui.setView(next, [offsetX - view.fitOffset[0], offsetY - view.fitOffset[1]]);
   }
 
   function handleDragMove(layer: Layer, node: Konva.Node) {
@@ -126,25 +191,14 @@ export function Editor2D() {
     updateLayer(layer.id, patch, `transform:${layer.id}`);
   }
 
-  const emptySections = size.sections.filter((s) => !config.layers.some((l) => l.sectionId === s.id));
+  // Name the empty panels so people know where they can print (the guides already name every panel).
+  const emptySections = guides ? [] : size.sections.filter((s) => !config.layers.some((l) => l.sectionId === s.id));
 
   return (
     <div className="editor2d">
-      <div className="pane-toolbar">
-        <div className="segmented small" role="group" aria-label="2D view">
-          <button type="button" aria-pressed={editorView === 'layout'} onClick={() => setEditorView('layout')}>
-            Whole layout
-          </button>
-          <button type="button" aria-pressed={editorView === 'section'} onClick={() => setEditorView('section')}>
-            {selectedSection.label} only
-          </button>
-        </div>
-        <span className="pane-hint">Drag to move · corners resize · top handle rotates</span>
-      </div>
-
-      <div className="stage-wrap" ref={wrapRef}>
+      <div className="stage-wrap" ref={wrapRef} data-zoomed={zoom > 1}>
         {box.width > 0 && box.height > 0 && (
-          <Stage width={box.width} height={box.height} onPointerDown={handleStagePointerDown}>
+          <Stage width={box.width} height={box.height} onPointerDown={handleStagePointerDown} onWheel={handleWheel}>
             <KonvaLayer>
               <Group
                 ref={groupRef}
