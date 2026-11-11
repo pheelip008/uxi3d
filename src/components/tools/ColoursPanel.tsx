@@ -91,7 +91,7 @@ export function ColoursPanel() {
             onClick={() => choosePart(s.id)}
           >
             <span className="part-swatch" style={{ background: config.sections[s.id]?.color }} />
-            {s.side} {s.kind === 'peak' ? 'peak' : 'val.'}
+            <span className="part-label">{s.label}</span>
           </button>
         ))}
       </div>
