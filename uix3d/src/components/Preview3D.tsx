@@ -28,12 +28,74 @@ const VIEW_DIRECTIONS: Record<ViewName, [number, number, number]> = {
   top: [0, 1, 0.02],
 };
 
+/** Directions checked for the closest zoom: side-on and corner-on, low and high. */
+const LIMIT_DIRECTIONS: [number, number, number][] = [
+  [0, 0.18, 1],
+  [1, 0.18, 1],
+  [0, 0.7, 1],
+  [1, 0.7, 1],
+];
+
 const SIDE_DIRECTIONS: Record<Side, [number, number]> = {
   front: [0, 1],
   back: [0, -1],
   left: [-1, 0],
   right: [1, 0],
 };
+
+/** How much of the frame the tent fills: the starting view, and the closest the camera may get. */
+const HOME_FILL = 0.8;
+const CLOSEST_FILL = 0.94;
+/** Trackpad pinch speed (pinches arrive as ctrl + wheel with small steps). */
+const PINCH_SPEED = 0.02;
+
+const scratchCamera = new THREE.PerspectiveCamera();
+
+/**
+ * Smallest camera distance at which the whole box is inside the frame, looking at
+ * `target` from `direction`. `fill` is how much of the frame it may use (1 = edge to edge).
+ */
+function fitDistance(
+  box: THREE.Box3,
+  direction: [number, number, number],
+  target: THREE.Vector3,
+  fov: number,
+  aspect: number,
+  fill: number,
+): number {
+  scratchCamera.fov = fov;
+  scratchCamera.aspect = aspect;
+  scratchCamera.near = 0.01;
+  scratchCamera.far = 1000;
+  scratchCamera.updateProjectionMatrix();
+  const dir = new THREE.Vector3(...direction).normalize();
+  const corners = [0, 1, 2, 3, 4, 5, 6, 7].map(
+    (i) =>
+      new THREE.Vector3(
+        i & 1 ? box.max.x : box.min.x,
+        i & 2 ? box.max.y : box.min.y,
+        i & 4 ? box.max.z : box.min.z,
+      ),
+  );
+  const p = new THREE.Vector3();
+  const fits = (d: number) => {
+    scratchCamera.position.copy(dir).multiplyScalar(d).add(target);
+    scratchCamera.lookAt(target);
+    scratchCamera.updateMatrixWorld();
+    return corners.every((c) => {
+      p.copy(c).project(scratchCamera);
+      return p.z < 1 && Math.abs(p.x) <= fill && Math.abs(p.y) <= fill;
+    });
+  };
+  let lo = 0.1;
+  let hi = 200;
+  for (let i = 0; i < 40; i++) {
+    const mid = (lo + hi) / 2;
+    if (fits(mid)) hi = mid;
+    else lo = mid;
+  }
+  return hi;
+}
 
 // The shared design canvas as a texture. One texture for the whole app.
 const designTexture = new THREE.CanvasTexture(designCanvas);
@@ -105,22 +167,21 @@ function TentScene({ mode, onFreeView }: TentSceneProps) {
     box.min.multiply(scale);
     box.max.multiply(scale);
     const dims = box.getSize(new THREE.Vector3());
-    return { top: box.max.y, radius: dims.length() / 2 };
+    // The camera orbits around the middle of the tent, so the whole tent sits centred.
+    return { box, top: box.max.y, middle: (box.min.y + box.max.y) / 2, radius: dims.length() / 2 };
   }, [model, size]);
 
   /**
    * Camera position looking at the tent from a direction, far enough back that
-   * the whole tent fits whatever the shape of the canvas (zoom < 1 = closer).
+   * the whole tent fits whatever the shape of the canvas.
    */
   const poseFor = useCallback(
-    (direction: [number, number, number], targetY: number, zoom = 1, aspect?: number) => {
+    (direction: [number, number, number], targetY: number, aspect?: number, fill = HOME_FILL) => {
       const { width, height } = get().size;
       const ratio = aspect ?? width / Math.max(1, height);
       const fov = (get().camera as THREE.PerspectiveCamera).fov;
-      const halfV = THREE.MathUtils.degToRad(fov / 2);
-      const half = Math.min(halfV, Math.atan(Math.tan(halfV) * ratio));
-      const distance = (bounds.radius / Math.sin(half)) * 0.85 * zoom;
       const target = new THREE.Vector3(0, targetY, 0);
+      const distance = fitDistance(bounds.box, direction, target, fov, ratio, fill);
       const position = new THREE.Vector3(...direction).normalize().multiplyScalar(distance).add(target);
       return { position, target };
     },
@@ -128,7 +189,7 @@ function TentScene({ mode, onFreeView }: TentSceneProps) {
   );
 
   const pose = useCallback(
-    (view: ViewName) => poseFor(VIEW_DIRECTIONS[view], bounds.top * 0.55),
+    (view: ViewName) => poseFor(VIEW_DIRECTIONS[view], bounds.middle),
     [poseFor, bounds],
   );
 
@@ -158,11 +219,35 @@ function TentScene({ mode, onFreeView }: TentSceneProps) {
     );
   }, [bounds]);
 
-  // Zoom limits: never inside the canopy, never so far out that the tent is a dot.
-  // The far limit leaves room for the "fit" distance on narrow (portrait) canvases.
-  const fitDistance = poseFor(VIEW_DIRECTIONS.home, 0, 1, canvasWidth / Math.max(1, canvasHeight)).position.length();
-  const minDistance = bounds.radius * 1.15;
-  const maxDistance = Math.max(bounds.radius * 3.2, fitDistance * 1.3);
+  // Zoom limits. Closest: the whole tent still fits from any angle, with a little floor
+  // showing below it. Furthest: about twice the starting view, so the tent never becomes a dot.
+  const aspect = canvasWidth / Math.max(1, canvasHeight);
+  const { minDistance, maxDistance } = useMemo(() => {
+    const distance = (direction: [number, number, number], fill?: number) =>
+      poseFor(direction, bounds.middle, aspect, fill).position.distanceTo(new THREE.Vector3(0, bounds.middle, 0));
+    const closest = Math.max(...LIMIT_DIRECTIONS.map((d) => distance(d, CLOSEST_FILL)));
+    return { minDistance: closest, maxDistance: Math.max(distance(VIEW_DIRECTIONS.home), closest) * 2.2 };
+  }, [poseFor, bounds, aspect]);
+
+  // A trackpad pinch arrives as a wheel event with ctrl held and tiny steps. The camera
+  // library would treat it as a slow lens zoom that ignores the limits above, so pinches
+  // move the camera here instead, faster, and within the same limits.
+  useEffect(() => {
+    const element = gl.domElement.closest('.preview3d');
+    if (!element) return;
+    const onWheel = (event: Event) => {
+      const e = event as WheelEvent;
+      const c = controls.current;
+      if (!e.ctrlKey || !c) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const step = THREE.MathUtils.clamp(e.deltaY * PINCH_SPEED, -0.3, 0.3);
+      c.dollyTo(c.distance * Math.exp(step), false);
+      invalidate(); // the canvas only redraws on demand
+    };
+    element.addEventListener('wheel', onWheel, { capture: true, passive: false });
+    return () => element.removeEventListener('wheel', onWheel, { capture: true });
+  }, [gl, invalidate]);
 
   // Turn the camera to whichever panel is selected, from any part of the UI.
   const focusedSection = useRef(selectedSectionId);
@@ -172,11 +257,7 @@ function TentScene({ mode, onFreeView }: TentSceneProps) {
     const section = getSection(size, selectedSectionId);
     const [dx, dz] = SIDE_DIRECTIONS[section.side];
     const isPeak = section.kind === 'peak';
-    const { position, target } = poseFor(
-      [dx, isPeak ? 0.55 : 0.12, dz],
-      bounds.top * (isPeak ? 0.7 : 0.52),
-      0.75,
-    );
+    const { position, target } = poseFor([dx, isPeak ? 0.55 : 0.12, dz], bounds.middle);
     controls.current?.setLookAt(position.x, position.y, position.z, target.x, target.y, target.z, true);
     onFreeView();
   }, [selectedSectionId, size, bounds, poseFor, onFreeView]);
@@ -209,7 +290,7 @@ function TentScene({ mode, onFreeView }: TentSceneProps) {
 
           const images: Partial<Record<ViewName, string>> = {};
           for (const view of views) {
-            const { position, target } = poseFor(VIEW_DIRECTIONS[view], bounds.top * 0.55, 1, W / H);
+            const { position, target } = poseFor(VIEW_DIRECTIONS[view], bounds.middle, W / H);
             cam.position.copy(position);
             cam.lookAt(target);
             cam.updateMatrixWorld();

@@ -19,7 +19,9 @@ import { MAX_ZOOM, useUiStore } from '../store/uiStore.ts';
 import type { Layer, SectionDefinition } from '../types.ts';
 
 const ACCENT = '#2563eb';
-const WHEEL_STEP = 1.15;
+/** Zoom per wheel unit: a mouse notch is about 100 units, a trackpad pinch (ctrl + wheel) a few. */
+const WHEEL_SPEED = 0.0015;
+const PINCH_SPEED = 0.02;
 
 function layerSize(layer: Layer) {
   return layer.type === 'text' ? measureText(layer) : { width: layer.width, height: layer.height };
@@ -149,13 +151,14 @@ export function Editor2D() {
     window.addEventListener('pointercancel', onUp);
   }
 
-  /** Scroll to zoom between "fit" and 400%, keeping the point under the pointer still. */
+  /** Scroll or pinch to zoom between "fit" and 400%, keeping the point under the pointer still. */
   function handleWheel(e: Konva.KonvaEventObject<WheelEvent>) {
     e.evt.preventDefault();
     const point = groupRef.current?.getRelativePointerPosition();
     if (!point) return;
     const ui = useUiStore.getState();
-    const next = clamp(ui.zoom * (e.evt.deltaY < 0 ? WHEEL_STEP : 1 / WHEEL_STEP), 1, MAX_ZOOM);
+    const speed = e.evt.ctrlKey ? PINCH_SPEED : WHEEL_SPEED;
+    const next = clamp(ui.zoom * Math.exp(clamp(-e.evt.deltaY * speed, -0.3, 0.3)), 1, MAX_ZOOM);
     if (next === ui.zoom) return;
     const k = ui.zoom / next;
     const offsetX = point.x - k * (point.x - view.offsetX);
